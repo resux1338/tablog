@@ -6,7 +6,8 @@
 # Commands:
 #   tab NAME        name this tab (sets terminal title + log tag, renames log file)
 #   tabi NAME       infra tab, wrapped as >NAME<  (tabi VPN+UP  ->  >VPN+UP<)
-#   eng NAME        set engagement for this tab, new tabs and still-unassigned tabs
+#   eng NAME        set engagement for this tab, new tabs and still-unassigned tabs;
+#                   new tabs open in the directory it was run in
 #   note TEXT       timestamped remark in the report timeline (findings, creds, flags)
 #   tablog report   build report.md + clean .txt transcripts (interactive shells split per remote command)
 #   tablog find X   search commands and notes across the engagement
@@ -101,11 +102,12 @@ if [[ -z ${TABLOG_SID-} ]]; then
   elif [[ ! -x $_tl_bin ]]; then
     _tl_why="cannot find the $_tl_sh binary"
   else
-    # lastdir: the terminal sees script(1) sitting in ~, so splits open in ~.
-    # A new shell that starts in ~ jumps to the last dir any tab was in.
-    if [[ -z ${TABLOG_NOLASTDIR-} && $PWD == "$HOME" && -r $TABLOG_ROOT/.lastdir ]]; then
-      IFS= read -r _tl_d < "$TABLOG_ROOT/.lastdir"
-      [[ -d $_tl_d ]] && cd -- "$_tl_d"
+    # The terminal opens the next tab in the directory of script(1), not of the shell inside
+    # it. Park script(1) in ~ so every new tab starts in ~ and picks its directory in phase 2
+    # (were it left elsewhere, all later tabs would be stuck in that one directory).
+    if [[ -z ${TABLOG_NOLASTDIR-} ]]; then
+      export TABLOG_START=$PWD
+      cd -- "$HOME" 2>/dev/null
     fi
     export TABLOG_SID TABLOG_FILE TABLOG_MODE=script TABLOG_REALSHELL=${SHELL-}
     # script(1) starts "$SHELL -i"; force the shell we are running in
@@ -113,7 +115,8 @@ if [[ -z ${TABLOG_SID-} ]]; then
       --log-timing "${TABLOG_FILE%.log}.timing" -O "$TABLOG_FILE"
     _tl_why="could not exec script(1)"   # only reached when exec itself failed
     [[ -n $TABLOG_REALSHELL ]] && SHELL=$TABLOG_REALSHELL
-    unset TABLOG_MODE TABLOG_REALSHELL
+    [[ -n ${TABLOG_START-} ]] && cd -- "$TABLOG_START" 2>/dev/null
+    unset TABLOG_MODE TABLOG_REALSHELL TABLOG_START
   fi
   unset _tl_d _tl_bin
   if [[ -n $_tl_why ]]; then
@@ -135,6 +138,23 @@ else
   _tl_new=   # rc sourced again, or `exec zsh`: carry on with the same session
 fi
 [[ -n ${TABLOG_REALSHELL-} ]] && export SHELL=$TABLOG_REALSHELL
+
+# startdir: a new tab that was opened in ~ goes to the directory `eng NAME` was run in, or
+# else (not under tmux, which has its own start directory) to the last one any tab was in.
+# A tab opened somewhere else on purpose stays there.
+if [[ -n $_tl_new && -z ${TABLOG_NOLASTDIR-} ]]; then
+  _tl_d=${TABLOG_START:-$PWD}
+  if [[ $_tl_d == "$HOME" ]]; then
+    _tl_d=
+    [[ -r $TABLOG_ROOT/.engdir ]] && IFS= read -r _tl_d < "$TABLOG_ROOT/.engdir"
+    if [[ ! -d $_tl_d && $TABLOG_MODE == script && -r $TABLOG_ROOT/.lastdir ]]; then
+      IFS= read -r _tl_d < "$TABLOG_ROOT/.lastdir"
+    fi
+  fi
+  [[ -d $_tl_d && $_tl_d != "$PWD" ]] && cd -- "$_tl_d"
+  unset _tl_d
+fi
+unset TABLOG_START
 
 # exported: the tab name and the command counter have to survive `exec zsh`
 export TABLOG_TTY=$_tl_tty TABLOG_TAB=${TABLOG_TAB-} TABLOG_N=${TABLOG_N:-${_tl_n:-0}}
@@ -278,6 +298,12 @@ eng() {
   fi
   _tl_slug "$1"
   mkdir -p "$TABLOG_ROOT/$REPLY/sessions" && printf '%s\n' "$REPLY" > "$TABLOG_ROOT/.engagement"
+  # new tabs open here; run from ~ there is no such place, and they follow the last dir again
+  if [[ $PWD == "$HOME" ]]; then
+    rm -f -- "$TABLOG_ROOT/.engdir"
+  else
+    printf '%s\n' "$PWD" > "$TABLOG_ROOT/.engdir"
+  fi
   _tl_move_eng "$REPLY"
   printf 'engagement: %s\n' "$TABLOG_ENG"
 }
@@ -295,6 +321,7 @@ tablog() {
 tab NAME         name this tab (title + log tag); no NAME shows current
 tabi NAME        infra tab, shown as >NAME<
 eng NAME         set engagement for this, new and unassigned tabs; no NAME shows current
+                 (new tabs open in the directory you run it in)
 note TEXT        timestamped remark in the report (findings, creds, flags)
 tablog status    where this tab logs
 tablog report    build ~/logs/<eng>/report.md  [ENG] [--local] [--max-lines N] [--max-lines-remote N]

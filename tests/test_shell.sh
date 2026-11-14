@@ -90,6 +90,39 @@ EOF
     fail "find: matches notes"
   fi
 
+  # where new tabs open
+  hd=$tmp/$sh-dir
+  mkdir -p "$hd/box" "$hd/other"
+  session "$sh" "$hd" <<'EOF'
+cd other
+exit
+EOF
+  session "$sh" "$hd" <<'EOF'
+echo "at=$PWD script=$(readlink /proc/$PPID/cwd)"
+cd ~/box
+eng exam
+cd ~/other
+exit
+EOF
+  has "$hd/screen.out" "at=$hd/other script=$hd" "new tab: opens in the last directory, script(1) stays in ~"
+  session "$sh" "$hd" <<'EOF'
+echo "at=$PWD"
+cd
+eng exam
+cd other
+exit
+EOF
+  has "$hd/screen.out" "at=$hd/box" "new tab: opens where eng was run"
+  session "$sh" "$hd" <<'EOF'
+echo "at=$PWD"
+exit
+EOF
+  has "$hd/screen.out" "at=$hd/other" "new tab: eng run in ~ falls back to the last directory"
+  { sleep 1.5; printf 'echo "at=$PWD"\n'; sleep 0.4; printf 'exit\n'; } |
+    env -i HOME="$hd" PATH="$PATH" TERM=xterm USER=tester LANG=C.UTF-8 SHELL="$(command -v "$sh")" \
+      script -q -c "cd $hd/work; $sh -i" /dev/null > "$hd/screen.out" 2>&1
+  has "$hd/screen.out" "at=$hd/work" "new tab: opened outside ~ stays there"
+
   # a shell that cannot log must still open
   h2=$tmp/$sh-ro
   mkdir -p "$h2/logs" && chmod 555 "$h2/logs"

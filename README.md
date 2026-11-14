@@ -55,7 +55,8 @@ tablog report          # -> ~/logs/exam/report.md
 | `tablog find REGEX` | search commands and notes (`--all` for every engagement) |
 | `tablog help` | cheat sheet |
 
-New tabs/splits that start in `~` open in the last directory you were in.
+New tabs/splits that start in `~` open in the directory `eng NAME` was run in. Without one
+(or when it was run in `~`) they open in the last directory you were in.
 
 ## Inside evil-winrm, reverse shells and other remote sessions
 
@@ -102,7 +103,7 @@ Export before the tablog line in your rc:
 export TABLOG_ROOT=~/logs
 export TABLOG_QUIET=1        # no banner
 export TABLOG_DISABLE=1      # off
-export TABLOG_NOLASTDIR=1    # don't jump to last dir
+export TABLOG_NOLASTDIR=1    # new tabs stay in ~
 export TABLOG_INTERACTIVE="tool1 tool2"   # extra shells to split per command
 ```
 
